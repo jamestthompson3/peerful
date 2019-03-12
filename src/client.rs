@@ -2,7 +2,7 @@ use std::io;
 use std::sync::mpsc::channel;
 use std::sync::mpsc::Sender as TSender;
 use std::thread;
-use ws::{connect, Handler, CloseCode, Sender};
+use ws::{connect, Handler, CloseCode, Sender, Error, ErrorKind, Handshake, Message};
 
 enum Event {
     Connect(Sender),
@@ -12,9 +12,6 @@ enum Event {
 struct SocketClient {
     ws_sender: Sender,
     thread: TSender<Event>,
-}
-
-impl Handler for SocketClient {
 }
 
 pub fn client() {
@@ -32,18 +29,33 @@ pub fn client() {
     if let Ok(Event::Connect(sender)) = rx.recv() {
         // Main loop
         loop {
+            println!("Enter your message:");
             // Get user input
             let mut message = String::new();
             io::stdin()
                 .read_line(&mut message)
                 .expect("Unable to read message");
 
-            sender.send(message);
-
-            // move |msg| {
-            //     println!("Got message");
-            //     sender.close(CloseCode::Normal)
-            // }
+            sender.send(message).unwrap();
         }
     }
 }
+
+impl Handler for SocketClient {
+   fn on_open(&mut self, _: Handshake) -> Result<(), Error> {
+       self.thread
+           .send(Event::Connect(self.ws_sender.clone()))
+           .map_err(|err| {
+               Error::new(
+                   ErrorKind::Internal,
+                   format!("Unable to communicate between threads: {:?}.", err),
+               )
+           })
+   }
+
+   fn on_message(&mut self, msg: Message) -> Result<(), Error> {
+       println!("Received {}", msg);
+       Ok(())
+   }
+}
+
