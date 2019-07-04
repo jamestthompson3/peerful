@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::io;
 use std::sync::mpsc::channel;
 use std::sync::mpsc::Sender as TSender;
@@ -9,37 +11,51 @@ enum Event {
     Disconnect,
 }
 
+#[derive(Serialize, Deserialize)]
+struct SerializableMessage {
+    nickname: String,
+    message: String,
+}
+
 struct SocketClient {
     ws_sender: Sender,
     thread: TSender<Event>,
 }
 
 pub fn client() {
-    let (tx, rx) = channel();
+    let (chan_send, chan_recv) = channel();
 
+    display(&"Enter nickname:");
+    let mut nickname = String::new();
+    io::stdin()
+        .read_line(&mut nickname)
+        .expect("Unable to read nickname");
     // Run client thread with channel to give it's WebSocket message sender back to us
     thread::spawn(move || {
         connect("ws://127.0.0.1:3012", |sender| SocketClient {
             ws_sender: sender,
-            thread: tx.clone(),
+            thread: chan_send.clone(),
         })
         .unwrap();
     });
 
-    if let Ok(Event::Connect(sender)) = rx.recv() {
-        // Main loop
+    if let Ok(Event::Connect(sender)) = chan_recv.recv() {
         display(&"Enter message:");
         loop {
-            let mut message = String::new();
+            let mut input = String::new();
             io::stdin()
-                .read_line(&mut message)
-                .expect("Unable to read message");
+                .read_line(&mut input)
+                .expect("Unable to read input");
 
-            if let Ok(Event::Disconnect) = rx.try_recv() {
+            if let Ok(Event::Disconnect) = chan_recv.try_recv() {
                 break;
             }
-            display(&format!("{:?}", sender.token()));
-            sender.send(message).unwrap();
+            let mut name_lines = nickname.lines();
+            let message = json!({
+                "message": input,
+                "nickname": name_lines.next().unwrap()
+            });
+            sender.send(message.to_string()).unwrap();
         }
     }
 }
@@ -57,7 +73,8 @@ impl Handler for SocketClient {
     }
 
     fn on_message(&mut self, msg: Message) -> Result<(), Error> {
-        display(&format!(">>> {}", msg.into_text().unwrap()));
+        let message: SerializableMessage = serde_json::from_str(&msg.into_text().unwrap()).unwrap();
+        display(&format!("{} >>> {}", message.nickname, message.message));
         display(&"Enter message:");
         Ok(())
     }
