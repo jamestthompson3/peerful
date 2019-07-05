@@ -1,17 +1,8 @@
-use serde::{Deserialize, Serialize};
-use serde_json::json;
+use crate::shared;
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::option::Option;
 use std::rc::Rc;
 use ws::{listen, CloseCode, Error, ErrorKind, Handler, Message, Result, Sender};
-
-#[derive(Serialize, Deserialize)]
-struct SerializableMessage {
-    nickname: String,
-    message: Option<String>,
-    msg_type: Option<String>,
-}
 
 type Users = Rc<RefCell<HashSet<String>>>;
 // Basically store connections in a vec, then remove them when client disconnects
@@ -39,19 +30,25 @@ impl Server {
 impl Handler for Server {
     fn on_message(&mut self, msg: Message) -> Result<()> {
         let text = msg.into_text().unwrap().clone();
-        let parsed: SerializableMessage = serde_json::from_str(&text).unwrap();
+        let parsed: shared::SerializableMessage = serde_json::from_str(&text).unwrap();
         match parsed.msg_type.as_ref().map(|s| &s[..]) {
             Some("join_server") if self.connections.borrow().contains(&parsed.nickname) => {
-                let message = json!({
-                    "nickname": "server",
-                    "message": Some("A user by that name already exists."),
-                    "msg_type": Some("user_taken_error")
-                });
-                self.out.send(message.to_string())
+                let message = shared::format_ws_message(
+                    "server",
+                    Some("A user by that name already exists.".to_string()),
+                    Some("user_taken_error".to_string()),
+                );
+                self.out.send(message)
             }
             Some("join_server") => {
+                let name = parsed.nickname.clone();
                 self.add_connection(parsed.nickname);
-                Ok(())
+                let message = shared::format_ws_message(
+                    "server",
+                    Some(format!("{} has joined", name).to_string()),
+                    None,
+                );
+                self.out.broadcast(message)
             }
             None => self.out.broadcast(text).map_err(|err| {
                 Error::new(

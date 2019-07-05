@@ -1,5 +1,6 @@
 mod client;
 mod server;
+mod shared;
 use std::env;
 
 fn main() {
