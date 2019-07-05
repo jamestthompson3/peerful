@@ -9,3 +9,4 @@ ws = "0.8.0"
 term = "*"
 serde_json = "1.0.40"
 serde = { version = "1.0.94", features = ["derive"] }
+colored = "1.8.0"

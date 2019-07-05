@@ -1,20 +1,23 @@
+use colored::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::io;
+use std::option::Option;
 use std::sync::mpsc::channel;
 use std::sync::mpsc::Sender as TSender;
 use std::thread;
 use ws::{connect, Error, ErrorKind, Handler, Handshake, Message, Sender};
 
-enum Event {
-    Connect(Sender),
-    Disconnect,
-}
-
 #[derive(Serialize, Deserialize)]
 struct SerializableMessage {
     nickname: String,
-    message: String,
+    message: Option<String>,
+    msg_type: Option<String>,
+}
+
+enum Event {
+    Connect(Sender),
+    Disconnect,
 }
 
 struct SocketClient {
@@ -40,6 +43,12 @@ pub fn client() {
     });
 
     if let Ok(Event::Connect(sender)) = chan_recv.recv() {
+        let mut name_lines = nickname.lines();
+        let message = json!({
+            "nickname": name_lines.next().unwrap(),
+            "msg_type": Some("join_server")
+        });
+        sender.send(message.to_string()).unwrap();
         display(&"Enter message:");
         loop {
             let mut input = String::new();
@@ -52,8 +61,9 @@ pub fn client() {
             }
             let mut name_lines = nickname.lines();
             let message = json!({
-                "message": input,
-                "nickname": name_lines.next().unwrap()
+                "message": Some(input),
+                "nickname": name_lines.next().unwrap(),
+
             });
             sender.send(message.to_string()).unwrap();
         }
@@ -73,8 +83,17 @@ impl Handler for SocketClient {
     }
 
     fn on_message(&mut self, msg: Message) -> Result<(), Error> {
-        let message: SerializableMessage = serde_json::from_str(&msg.into_text().unwrap()).unwrap();
-        display(&format!("{} >>> {}", message.nickname, message.message));
+        let text = msg.into_text().unwrap().clone();
+        let parsed: SerializableMessage = serde_json::from_str(&text).unwrap();
+        // TODO set as env vars for customization
+        let display_name = format!("{}", parsed.nickname).bright_cyan();
+        let separator = ">>>".bright_black();
+        display(&format!(
+            "{} {} {}",
+            display_name,
+            separator,
+            parsed.message.unwrap()
+        ));
         display(&"Enter message:");
         Ok(())
     }
