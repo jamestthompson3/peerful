@@ -8,7 +8,7 @@ use std::sync::mpsc::Sender as TSender;
 use std::thread;
 use ws::{connect, Error, ErrorKind, Handler, Handshake, Message, Sender};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct SerializableMessage {
     nickname: String,
     message: Option<String>,
@@ -84,19 +84,34 @@ impl Handler for SocketClient {
 
     fn on_message(&mut self, msg: Message) -> Result<(), Error> {
         let text = msg.into_text().unwrap().clone();
-        let parsed: SerializableMessage = serde_json::from_str(&text).unwrap();
-        // TODO set as env vars for customization
-        let display_name = format!("{}", parsed.nickname).bright_cyan();
-        let separator = ">>>".bright_black();
-        display(&format!(
-            "{} {} {}",
-            display_name,
-            separator,
-            parsed.message.unwrap()
-        ));
-        display(&"Enter message:");
+        let mut parsed: SerializableMessage = serde_json::from_str(&text).unwrap();
+        let is_error = get_msg_err(&mut parsed);
+        display_message(&mut parsed, is_error);
+        if is_error {
+            match &parsed.msg_type.as_ref().map(|s| &s[..]) {
+                Some("user_taken_error") => {
+                    display(&"Enter nickname:");
+                    let mut nickname = String::new();
+                    io::stdin()
+                        .read_line(&mut nickname)
+                        .expect("Unable to read nickname");
+
+                    let mut name_lines = nickname.lines();
+                    let message = json!({
+                        "nickname": name_lines.next().unwrap(),
+                        "msg_type": Some("join_server")
+                    });
+                    self.ws_sender.send(message.to_string()).unwrap();
+                }
+                _ => {}
+            }
+        }
         Ok(())
     }
+}
+
+fn get_msg_err<'a>(parsed: &'a mut SerializableMessage) -> bool {
+    return parsed.msg_type.is_some() && parsed.msg_type.as_mut().unwrap().contains("error");
 }
 
 fn display(string: &str) {
@@ -104,4 +119,16 @@ fn display(string: &str) {
     msg.carriage_return().unwrap();
     msg.delete_line().unwrap();
     println!("{}", string);
+}
+
+fn display_message<'a>(parsed: &'a mut SerializableMessage, is_error: bool) {
+    // TODO set as env vars for customization
+    let display_name = format!("{}", parsed.nickname).bright_cyan();
+    let separator = ">>>".bright_black();
+    let msg_color = if is_error { "red" } else { "white" };
+    let display_msg = parsed.message.as_mut().unwrap().color(msg_color);
+    display(&format!("{} {} {}", display_name, separator, display_msg));
+    if !is_error {
+        display(&"Enter message:");
+    }
 }

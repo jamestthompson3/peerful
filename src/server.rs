@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::option::Option;
 use std::rc::Rc;
-use ws::{listen, CloseCode, Error, ErrorKind, Handler, Handshake, Message, Result, Sender};
+use ws::{listen, CloseCode, Error, ErrorKind, Handler, Message, Result, Sender};
 
 #[derive(Serialize, Deserialize)]
 struct SerializableMessage {
@@ -45,6 +45,7 @@ impl Handler for Server {
                 let message = json!({
                     "nickname": "server",
                     "message": Some("A user by that name already exists."),
+                    "msg_type": Some("user_taken_error")
                 });
                 self.out.send(message.to_string())
             }
