@@ -33,8 +33,8 @@ pub fn client() {
     });
 
     if let Ok(Event::Connect(sender, nickname)) = chan_recv.recv() {
-        display(&"Enter message: ");
         loop {
+            display(&"Enter message: ");
             let mut input = String::new();
             io::stdin()
                 .read_line(&mut input)
@@ -50,6 +50,8 @@ pub fn client() {
                 None,
             );
             sender.send(message).unwrap();
+            let mut clear = term::stdout().unwrap();
+            clear.delete_line().unwrap();
         }
     }
 }
@@ -67,10 +69,12 @@ impl Handler for SocketClient {
     }
 
     fn on_message(&mut self, msg: Message) -> Result<(), Error> {
+        let mut clear = term::stdout().unwrap();
+        clear.delete_line().unwrap();
         let text = msg.into_text().unwrap().clone();
         let mut parsed: shared::SerializableMessage = serde_json::from_str(&text).unwrap();
         let is_error = get_msg_err(&mut parsed);
-        display_message(&mut parsed, is_error, self.loop_init);
+        display_message(&mut parsed, is_error);
         match &parsed.msg_type.as_ref().map(|s| &s[..]) {
             Some("user_taken_error") => {
                 self.nickname = String::new();
@@ -115,11 +119,7 @@ fn display(string: &str) {
     msg.carriage_return().unwrap();
 }
 
-fn display_message<'a>(
-    parsed: &'a mut shared::SerializableMessage,
-    is_error: bool,
-    loop_init: bool,
-) {
+fn display_message<'a>(parsed: &'a mut shared::SerializableMessage, is_error: bool) {
     // TODO set as env vars for customization
     let display_name = if parsed.nickname == "server" {
         format!("{}", parsed.nickname).bright_magenta()
@@ -130,7 +130,4 @@ fn display_message<'a>(
     let msg_color = if is_error { "red" } else { "white" };
     let display_msg = parsed.message.as_mut().unwrap().color(msg_color);
     display(&format!("{} {} {}", display_name, separator, display_msg));
-    if !is_error && loop_init {
-        display(&"Enter message:");
-    }
 }
