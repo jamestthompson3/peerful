@@ -12,6 +12,7 @@ pub fn server() {
     listen("127.0.0.1:3012", move |out| Server {
         out,
         connections: users.clone(),
+        user: None,
     })
     .unwrap();
 }
@@ -19,6 +20,7 @@ pub fn server() {
 struct Server {
     connections: Users,
     out: Sender,
+    user: Option<String>,
 }
 
 impl Server {
@@ -43,6 +45,7 @@ impl Handler for Server {
             Some("join_server") => {
                 let name = parsed.nickname.clone();
                 self.add_connection(parsed.nickname);
+                self.user = Some(name.clone());
                 let message = shared::format_ws_message(
                     "server",
                     Some(format!("{} has joined", name).to_string()),
@@ -60,6 +63,14 @@ impl Handler for Server {
         }
     }
     fn on_close(&mut self, code: CloseCode, reason: &str) {
+        let user = self.user.clone();
+        let message = shared::format_ws_message(
+            "server",
+            Some(format!("{} has left", &user.clone().unwrap())),
+            None,
+        );
+        self.out.broadcast(message).unwrap();
+        self.connections.borrow_mut().remove(&user.unwrap());
         println!("WebSocket closing for ({:?}) {}", code, reason);
     }
 }
